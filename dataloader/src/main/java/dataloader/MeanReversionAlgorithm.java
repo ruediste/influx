@@ -1,17 +1,25 @@
 package dataloader;
 
+import java.time.Duration;
 import java.time.Instant;
 
 import javax.inject.Inject;
 
-import org.apache.commons.math.stat.descriptive.DescriptiveStatistics;
+import org.apache.commons.math.stat.descriptive.SummaryStatistics;
+import org.apache.commons.math.stat.descriptive.rank.Max;
 
-import dataloader.TradeDataRepository.TradeDataPoint;
-
-public class MeanReversionAlgorithm implements TradingAlgorithm {
+public class MeanReversionAlgorithm implements TradingAlgorithm, Cloneable {
 
     @Inject
     TradeDataRepository repo;
+    public int longMeanLength = 40;
+    public int shortMeanLength = 10;
+    public double devFactor = 1;
+
+    @Override
+    protected Object clone() throws CloneNotSupportedException {
+        return super.clone();
+    }
 
     @Override
     public void train(Instant lastInstantToInclude) {
@@ -25,21 +33,18 @@ public class MeanReversionAlgorithm implements TradingAlgorithm {
 
     @Override
     public int evaluate(Instant lastInstantToInclude) {
-        int longMeanLength = 40;
-        int shortMeanLength = 10;
-        DescriptiveStatistics meanLong = new DescriptiveStatistics(longMeanLength);
-        DescriptiveStatistics meanShort = new DescriptiveStatistics(shortMeanLength);
-        for (TradeDataPoint point : repo.getData()) {
-            if (point.time.isAfter(lastInstantToInclude))
-                continue;
-            meanLong.addValue(point.settle);
-            meanShort.addValue(point.settle);
-        }
+        SummaryStatistics longStat = new SummaryStatistics();
+        SummaryStatistics shortStat = new SummaryStatistics();
+        longStat.setSumLogImpl(new Max());
+        shortStat.setSumLogImpl(new Max());
+        repo.getDataMap().subMap(lastInstantToInclude.minus(Duration.ofDays(longMeanLength)), lastInstantToInclude)
+                .values().forEach(point -> longStat.addValue(point.settle));
+        repo.getDataMap().subMap(lastInstantToInclude.minus(Duration.ofDays(shortMeanLength)), lastInstantToInclude)
+                .values().forEach(point -> shortStat.addValue(point.settle));
 
-        if (meanLong.getMean() < meanShort.getMean()) {
-            return -1;
-        } else
-            return 1;
+        double dev = devFactor * longStat.getStandardDeviation();
+        double diff = longStat.getMean() - shortStat.getMean();
+        return (int) Math.floor(diff / dev);
     }
 
 }

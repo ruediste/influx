@@ -2,9 +2,8 @@ package dataloader;
 
 import java.time.Instant;
 import java.util.ArrayList;
-import java.util.HashMap;
 import java.util.List;
-import java.util.Map;
+import java.util.TreeMap;
 
 import javax.annotation.PostConstruct;
 import javax.inject.Singleton;
@@ -29,7 +28,7 @@ public class TradeDataRepository {
     }
 
     private List<TradeDataPoint> dataList = new ArrayList<>();
-    private Map<Instant, TradeDataPoint> dataMap = new HashMap<>();
+    private TreeMap<Instant, TradeDataPoint> dataMap = new TreeMap<>();
 
     @PostConstruct
     public void postConstruct() {
@@ -60,7 +59,7 @@ public class TradeDataRepository {
         return dataList;
     }
 
-    public Map<Instant, TradeDataPoint> getDataMap() {
+    public TreeMap<Instant, TradeDataPoint> getDataMap() {
         return dataMap;
     }
 }
