@@ -1,9 +1,7 @@
 <project xmlns="http://maven.apache.org/POM/4.0.0" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
 	xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/xsd/maven-4.0.0.xsd">
 	<modelVersion>4.0.0</modelVersion>
-	<groupId>dataloader</groupId>
-	<artifactId>dataloader</artifactId>
-	<version>0.0.1-SNAPSHOT</version>
+	<artifactId>remoteHz-member</artifactId>
 	<properties>
 		<project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
 		<com.umlet.nature.enabled>true</com.umlet.nature.enabled>
@@ -21,9 +19,9 @@
 			<version>2.4</version>
 		</dependency>
 <!-- 		<dependency> -->
-<!-- 			<groupId>org.jblas</groupId> -->
-<!-- 			<artifactId>jblas</artifactId> -->
-<!-- 			<version>1.2.4</version> -->
+<!-- 	<groupId>org.jblas</groupId> -->
+<!-- 	<artifactId>jblas</artifactId> -->
+<!-- 	<version>1.2.4</version> -->
 <!-- 		</dependency> -->
 		<dependency>
 			<groupId>org.apache.commons</groupId>
@@ -35,6 +33,11 @@
 			<artifactId>salta-jsr330</artifactId>
 			<version>0.2</version>
 		</dependency>
+		<dependency>
+  		<groupId>ch.ruediste.remoteHz</groupId>
+  		<artifactId>remoteHz-common</artifactId>
+  		<version>${project.version}</version>
+  	</dependency>
 	</dependencies>
 	<dependencyManagement>
 		<dependencies>
@@ -43,6 +46,7 @@
 				<artifactId>okhttp</artifactId>
 				<version>3.3.0</version>
 			</dependency>
+
 		</dependencies>
 	</dependencyManagement>
 	<build>
@@ -60,4 +64,9 @@
 		</plugins>
 	</build>
 
+	<parent>
+		<groupId>ch.ruediste.remoteHz</groupId>
+		<artifactId>remoteHz-parent</artifactId>
+		<version>0.0.1-SNAPSHOT</version>
+	</parent>
 </project>
