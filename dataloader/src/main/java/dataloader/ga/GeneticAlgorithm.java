@@ -49,12 +49,19 @@ public class GeneticAlgorithm<T extends GeneticAlgorithm.Speciem<T>> {
 
         @Override
         public boolean getAsBoolean() {
-            return count++ > 100;
+            return count++ > 25;
         }
     };
 
-    public List<T> run() {
+    public static class OptimizationResult<T> {
+        public List<T> lastGeneration;
+        public List<double[]> fitnesses = new ArrayList<>();
+    }
+
+    public OptimizationResult<T> run() {
         Random random = new Random();
+        OptimizationResult<T> result = new OptimizationResult<>();
+
         // initialize first generation
         ArrayList<T> currentGeneration = new ArrayList<>(parameters.populationSize);
         for (int i = 0; i < parameters.populationSize; i++) {
@@ -63,11 +70,18 @@ public class GeneticAlgorithm<T extends GeneticAlgorithm.Speciem<T>> {
 
         int generation = 0;
         // loop generations
-        while (!finishCriteria.getAsBoolean()) {
+        while (true) {
             // calculate fitness
             currentGeneration.forEach(Speciem::calculateFitness);
+
             // order speciem by fitness
             currentGeneration.sort(Comparator.comparing(x -> x.fitness));
+            result.fitnesses.add(currentGeneration.stream().mapToDouble(x -> x.fitness).toArray());
+
+            // check for finish
+            if (finishCriteria.getAsBoolean()) {
+                break;
+            }
 
             ArrayList<T> nextGeneration = new ArrayList<>(parameters.populationSize);
             {
@@ -112,7 +126,8 @@ public class GeneticAlgorithm<T extends GeneticAlgorithm.Speciem<T>> {
             generation++;
         }
 
-        return currentGeneration;
+        result.lastGeneration = currentGeneration;
+        return result;
     }
 
     private T chooseRandom(Random r, List<T> list) {

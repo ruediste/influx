@@ -1,34 +1,38 @@
 package ch.ruediste.remoteHz.common;
 
-import java.io.ByteArrayInputStream;
 import java.io.ByteArrayOutputStream;
-import java.io.IOException;
 import java.io.InputStream;
 import java.io.ObjectOutputStream;
 import java.io.Serializable;
-import java.util.HashMap;
+import java.util.UUID;
 import java.util.concurrent.Callable;
-import java.util.jar.JarInputStream;
 import java.util.zip.ZipEntry;
-import java.util.zip.ZipInputStream;
 import java.util.zip.ZipOutputStream;
 
 import com.google.common.io.ByteStreams;
 import com.google.common.reflect.ClassPath;
 import com.google.common.reflect.ClassPath.ResourceInfo;
+import com.hazelcast.core.HazelcastInstance;
+import com.hazelcast.core.HazelcastInstanceAware;
 
-public class RemoteHzCallable<T> implements Serializable, Callable<T> {
+public class RemoteHzCallable<T> implements Serializable, Callable<T>, HazelcastInstanceAware {
     private static final long serialVersionUID = 1L;
 
-    byte[] codeJar;
+    private static ThreadLocal<UUID> threadCodeId = new ThreadLocal<>();
 
-    byte[] serializedCallable;
+    private byte[] codeJar;
 
-    private static final class CallableToRunnableWrapper implements Runnable, Serializable {
+    private UUID codeId;
+
+    private byte[] serializedCallable;
+
+    private HazelcastInstance hz;
+
+    private static final class CallableToRunnableWrapper implements Runnable, Serializable, HazelcastInstanceAware {
         private static final long serialVersionUID = 1L;
-        private Callable<?> callable;
+        private RemoteHzCallable<?> callable;
 
-        public CallableToRunnableWrapper(Callable<?> callable) {
+        public CallableToRunnableWrapper(RemoteHzCallable<?> callable) {
             this.callable = callable;
         }
 
@@ -40,9 +44,15 @@ public class RemoteHzCallable<T> implements Serializable, Callable<T> {
                 throw new RuntimeException(e);
             }
         }
+
+        @Override
+        public void setHazelcastInstance(HazelcastInstance hazelcastInstance) {
+            callable.setHazelcastInstance(hazelcastInstance);
+        }
     }
 
-    private static final class RunnableToCallableWrapper implements Callable<Object>, Serializable {
+    private static final class RunnableToCallableWrapper
+            implements Callable<Object>, Serializable, HazelcastInstanceAware {
         private static final long serialVersionUID = 1L;
         private Runnable runnable;
 
@@ -55,40 +65,18 @@ public class RemoteHzCallable<T> implements Serializable, Callable<T> {
             runnable.run();
             return null;
         }
-    }
-
-    private static class InMemoryClassLoader extends ClassLoader {
-
-        HashMap<String, byte[]> resources = new HashMap<>();
-
-        public InMemoryClassLoader(ClassLoader parent, byte[] codeJar) {
-            super(parent);
-            try (ZipInputStream zip = new JarInputStream(new ByteArrayInputStream(codeJar))) {
-                while (true) {
-                    ZipEntry entry = zip.getNextEntry();
-                    if (entry == null)
-                        break;
-                    resources.put(entry.getName(), ByteStreams.toByteArray(zip));
-                }
-            } catch (IOException e) {
-                throw new RuntimeException(e);
-            }
-
-        }
 
         @Override
-        protected Class<?> findClass(String name) throws ClassNotFoundException {
-            byte[] bb = resources.get(name.replace('.', '/') + ".class");
-            if (bb != null)
-                return defineClass(name, bb, 0, bb.length);
-            else
-                return null;
+        public void setHazelcastInstance(HazelcastInstance hazelcastInstance) {
+            if (runnable instanceof HazelcastInstanceAware)
+                ((HazelcastInstanceAware) runnable).setHazelcastInstance(hazelcastInstance);
+
         }
     }
 
-    public static <T> Runnable create(Runnable runnable) {
+    public static <T extends Runnable & Serializable> Runnable create(T runnable) {
 
-        Callable<Object> callable = create(new RunnableToCallableWrapper(runnable), runnable);
+        RemoteHzCallable<Object> callable = create(new RunnableToCallableWrapper(runnable), runnable);
         return new CallableToRunnableWrapper(callable);
 
     }
@@ -97,22 +85,27 @@ public class RemoteHzCallable<T> implements Serializable, Callable<T> {
         return create(callable, callable);
     }
 
-    private static <T> Callable<T> create(Callable<T> callable, Object original) {
-        ByteArrayOutputStream codeBaos = new ByteArrayOutputStream();
+    private static <T> RemoteHzCallable<T> create(Callable<T> callable, Object original) {
+        ByteArrayOutputStream codeBaos = null;
         ByteArrayOutputStream callableBaos = new ByteArrayOutputStream();
+        UUID codeId = threadCodeId.get();
         try {
-            try (ZipOutputStream zos = new ZipOutputStream(codeBaos)) {
-                String prefix;
-                {
-                    int idx = original.getClass().getName().lastIndexOf('.');
-                    prefix = original.getClass().getName().substring(0, idx + 1).replace('.', '/');
-                }
-                ClassLoader cl = original.getClass().getClassLoader();
-                for (ResourceInfo info : ClassPath.from(cl).getResources()) {
-                    if (info.getResourceName().startsWith(prefix)) {
-                        zos.putNextEntry(new ZipEntry(info.getResourceName()));
-                        try (InputStream in = cl.getResourceAsStream(info.getResourceName())) {
-                            ByteStreams.copy(in, zos);
+            if (codeId == null) {
+                codeId = UUID.randomUUID();
+                codeBaos = new ByteArrayOutputStream();
+                try (ZipOutputStream zos = new ZipOutputStream(codeBaos)) {
+                    String prefix;
+                    {
+                        int idx = original.getClass().getName().lastIndexOf('.');
+                        prefix = original.getClass().getName().substring(0, idx + 1).replace('.', '/');
+                    }
+                    ClassLoader cl = original.getClass().getClassLoader();
+                    for (ResourceInfo info : ClassPath.from(cl).getResources()) {
+                        if (info.getResourceName().startsWith(prefix)) {
+                            zos.putNextEntry(new ZipEntry(info.getResourceName()));
+                            try (InputStream in = cl.getResourceAsStream(info.getResourceName())) {
+                                ByteStreams.copy(in, zos);
+                            }
                         }
                     }
                 }
@@ -125,16 +118,42 @@ public class RemoteHzCallable<T> implements Serializable, Callable<T> {
             throw new RuntimeException(e);
         }
         RemoteHzCallable<T> result = new RemoteHzCallable<>();
-        result.codeJar = codeBaos.toByteArray();
+        result.codeId = codeId;
+        result.codeJar = codeBaos == null ? null : codeBaos.toByteArray();
         result.serializedCallable = callableBaos.toByteArray();
         return result;
     }
 
     @Override
     public T call() throws Exception {
-        InMemoryClassLoader cl = new InMemoryClassLoader(getClass().getClassLoader(), codeJar);
-        @SuppressWarnings("unchecked")
-        Callable<T> callable = (Callable<T>) SerializationHelper.toObject(serializedCallable, cl);
-        return callable.call();
+        UUID oldId = threadCodeId.get();
+        try {
+            ClassLoader cl;
+            if (codeJar != null) {
+                cl = RemoteCodeRepository.setCode(codeId, codeJar, hz);
+            } else {
+                cl = RemoteCodeRepository.getClassLoader(codeId, hz);
+            }
+
+            // load callable
+            @SuppressWarnings("unchecked")
+            Callable<T> callable = (Callable<T>) SerializationHelper.toObject(serializedCallable, cl);
+
+            threadCodeId.set(codeId);
+            if (callable instanceof HazelcastInstanceAware) {
+                ((HazelcastInstanceAware) callable).setHazelcastInstance(hz);
+            }
+            return callable.call();
+        } catch (Throwable t) {
+            t.printStackTrace();
+            throw t;
+        } finally {
+            threadCodeId.set(oldId);
+        }
+    }
+
+    @Override
+    public void setHazelcastInstance(HazelcastInstance hazelcastInstance) {
+        this.hz = hazelcastInstance;
     }
 }

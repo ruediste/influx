@@ -11,6 +11,11 @@
 
 	<dependencies>
 		<dependency>
+			<groupId>org.zeroturnaround</groupId>
+			<artifactId>zt-exec</artifactId>
+			<version>1.9</version>
+		</dependency>
+		<dependency>
 			<groupId>com.hazelcast.jet</groupId>
 			<artifactId>hazelcast-jet</artifactId>
 			<version>0.3.1</version>
@@ -20,11 +25,11 @@
 			<artifactId>influxdb-java</artifactId>
 			<version>2.4</version>
 		</dependency>
-<!-- 		<dependency> -->
-<!-- 			<groupId>org.jblas</groupId> -->
-<!-- 			<artifactId>jblas</artifactId> -->
-<!-- 			<version>1.2.4</version> -->
-<!-- 		</dependency> -->
+		<!-- <dependency> -->
+		<!-- <groupId>org.jblas</groupId> -->
+		<!-- <artifactId>jblas</artifactId> -->
+		<!-- <version>1.2.4</version> -->
+		<!-- </dependency> -->
 		<dependency>
 			<groupId>org.apache.commons</groupId>
 			<artifactId>commons-math</artifactId>
@@ -34,6 +39,11 @@
 			<groupId>com.github.ruediste.salta</groupId>
 			<artifactId>salta-jsr330</artifactId>
 			<version>0.2</version>
+		</dependency>
+		<dependency>
+			<groupId>ch.ruediste.remoteHz</groupId>
+			<artifactId>remoteHz-common</artifactId>
+			<version>0.0.1-SNAPSHOT</version>
 		</dependency>
 	</dependencies>
 	<dependencyManagement>

@@ -12,7 +12,7 @@ public class RemoteHzClient {
         ClientConfig clientConfig = new ClientConfig();
         clientConfig.getNetworkConfig().addAddress("localhost");
         HazelcastInstance hz = HazelcastClient.newHazelcastClient(clientConfig);
-        hz.getExecutorService("default").executeOnAllMembers(RemoteHzCallable.create(new SampleTask()));
+        hz.getExecutorService("default").execute(RemoteHzCallable.create(new SampleTask()));
         hz.shutdown();
     }
 }

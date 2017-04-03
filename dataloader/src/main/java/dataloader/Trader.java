@@ -1,5 +1,7 @@
 package dataloader;
 
+import java.io.File;
+import java.io.PrintStream;
 import java.time.Duration;
 import java.time.Instant;
 import java.util.Arrays;
@@ -10,17 +12,19 @@ import javax.inject.Inject;
 import javax.inject.Provider;
 
 import org.apache.commons.math.stat.descriptive.SummaryStatistics;
+import org.zeroturnaround.exec.ProcessExecutor;
 
 import com.github.ruediste.salta.jsr330.AbstractModule;
 import com.github.ruediste.salta.jsr330.Salta;
 
 import dataloader.TradeDataRepository.TradeDataPoint;
 import dataloader.ga.GeneticAlgorithm;
+import dataloader.ga.GeneticAlgorithm.OptimizationResult;
 import dataloader.ga.GeneticAlgorithm.ParameterAccessor;
 import dataloader.ga.GeneticAlgorithm.Speciem;
 
 public class Trader {
-    public static void main(String... args) {
+    public static void main(String... args) throws Exception {
         new Trader().main();
     }
 
@@ -32,7 +36,7 @@ public class Trader {
 
     Random random = new Random();
 
-    private void main() {
+    private void main() throws Exception {
         Salta.createInjector(new AbstractModule() {
 
             @Override
@@ -43,7 +47,24 @@ public class Trader {
 
         GeneticAlgorithm<AlgoSpeciem> ga = new GeneticAlgorithm<AlgoSpeciem>();
         ga.speciemFactory = () -> new AlgoSpeciem();
-        ga.run();
+        OptimizationResult<AlgoSpeciem> result = ga.run();
+
+        // write data
+        // File dataFile = File.createTempFile("plot", "data");
+        // dataFile.deleteOnExit();
+        File dataFile = new File("data.dat");
+        try (PrintStream out = new PrintStream(dataFile)) {
+            for (int i = 0; i < result.fitnesses.size(); i++) {
+                double[] gen = result.fitnesses.get(i);
+                for (double f : gen) {
+                    out.println(i + " " + f);
+                }
+            }
+        }
+
+        // invoke gnuplot
+        new ProcessExecutor("gnuplot", "-e", "plot \"" + dataFile.getAbsolutePath() + "\"; pause -1")
+                .redirectOutput(System.out).redirectInput(System.in).execute();
     }
 
     private class AlgoSpeciem extends Speciem<AlgoSpeciem> {
@@ -141,6 +162,7 @@ public class Trader {
             countStat = new SummaryStatistics();
             while (time.isBefore(end)) {
                 Instant tmp = time.plus(Duration.ofDays(random.nextInt(step) + 1));
+                // Instant tmp = time;
                 AlgoData data = evaluateAlgo(algo, tmp, tmp.plus(Duration.ofDays(28)));
                 double countMean = data.countStat.getMean();
                 if (countMean == 0)
