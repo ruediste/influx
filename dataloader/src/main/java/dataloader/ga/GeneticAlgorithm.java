@@ -1,5 +1,6 @@
 package dataloader.ga;
 
+import java.io.Serializable;
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.List;
@@ -22,7 +23,8 @@ public class GeneticAlgorithm<T extends GeneticAlgorithm.Speciem<T>> {
         void mutate(double distance);
     }
 
-    public static abstract class Speciem<TSelf> implements Cloneable {
+    public static abstract class Speciem<TSelf> implements Cloneable, Serializable {
+        private static final long serialVersionUID = 1L;
         public double fitness;
 
         abstract public List<ParameterAccessor<TSelf>> getParameters();

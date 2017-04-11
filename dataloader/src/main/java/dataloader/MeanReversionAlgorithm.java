@@ -1,17 +1,16 @@
 package dataloader;
 
+import java.io.Serializable;
 import java.time.Duration;
 import java.time.Instant;
-
-import javax.inject.Inject;
 
 import org.apache.commons.math.stat.descriptive.SummaryStatistics;
 import org.apache.commons.math.stat.descriptive.rank.Max;
 
-public class MeanReversionAlgorithm implements TradingAlgorithm, Cloneable {
+public class MeanReversionAlgorithm implements TradingAlgorithm, Cloneable, Serializable {
 
-    @Inject
-    TradeDataRepository repo;
+    private static final long serialVersionUID = 1L;
+
     public int longMeanLength = 40;
     public int shortMeanLength = 10;
     public double devFactor = 1;
@@ -22,17 +21,17 @@ public class MeanReversionAlgorithm implements TradingAlgorithm, Cloneable {
     }
 
     @Override
-    public void train(Instant lastInstantToInclude) {
+    public void train(Instant lastInstantToInclude, TradeDataRepository repo) {
 
     }
 
     @Override
-    public void prepare(Instant nextEvaluation) {
+    public void prepare(Instant nextEvaluation, TradeDataRepository repo) {
 
     }
 
     @Override
-    public int evaluate(Instant lastInstantToInclude) {
+    public int evaluate(Instant lastInstantToInclude, TradeDataRepository repo) {
         SummaryStatistics longStat = new SummaryStatistics();
         SummaryStatistics shortStat = new SummaryStatistics();
         longStat.setSumLogImpl(new Max());

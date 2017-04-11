@@ -26,7 +26,7 @@ public class SampleTask implements Runnable, Serializable, HazelcastInstanceAwar
     public void run() {
         System.out.println("Hello World from the Sample Task");
         IExecutorService executor = hz.getExecutorService("default");
-        executor.executeOnAllMembers(RemoteHzCallable.create(new Task2()));
+        executor.executeOnAllMembers(new Task2());
     }
 
     @Override

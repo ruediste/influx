@@ -1,32 +1,34 @@
 package dataloader;
 
-import java.io.File;
-import java.io.PrintStream;
+import java.io.Serializable;
 import java.time.Duration;
 import java.time.Instant;
+import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
 import java.util.Random;
+import java.util.concurrent.Callable;
+import java.util.concurrent.Future;
 
 import javax.inject.Inject;
 import javax.inject.Provider;
 
 import org.apache.commons.math.stat.descriptive.SummaryStatistics;
-import org.zeroturnaround.exec.ProcessExecutor;
 
 import com.github.ruediste.salta.jsr330.AbstractModule;
+import com.github.ruediste.salta.jsr330.Injector;
 import com.github.ruediste.salta.jsr330.Salta;
+import com.hazelcast.core.HazelcastInstance;
+import com.hazelcast.core.HazelcastInstanceAware;
 
+import ch.ruediste.remoteHz.common.ICallable;
 import dataloader.TradeDataRepository.TradeDataPoint;
 import dataloader.ga.GeneticAlgorithm;
 import dataloader.ga.GeneticAlgorithm.OptimizationResult;
 import dataloader.ga.GeneticAlgorithm.ParameterAccessor;
 import dataloader.ga.GeneticAlgorithm.Speciem;
 
-public class Trader {
-    public static void main(String... args) throws Exception {
-        new Trader().main();
-    }
+public class Trader implements ICallable<OptimizationResult<Trader.AlgoSpeciem>>, HazelcastInstanceAware {
 
     @Inject
     Provider<MeanReversionAlgorithm> algoProvider;
@@ -34,41 +36,35 @@ public class Trader {
     @Inject
     TradeDataRepository repo;
 
+    @Inject
+    Injector injector;
+
     Random random = new Random();
 
-    private void main() throws Exception {
-        Salta.createInjector(new AbstractModule() {
+    private HazelcastInstance hz;
+
+    private static class InjectorHolder {
+        public static Injector injector = Salta.createInjector(new AbstractModule() {
 
             @Override
             protected void configure() throws Exception {
 
             }
-        }).injectMembers(this);
+        });
+    }
 
+    @Override
+    public OptimizationResult<AlgoSpeciem> call() throws Exception {
+        InjectorHolder.injector.injectMembers(this);
         GeneticAlgorithm<AlgoSpeciem> ga = new GeneticAlgorithm<AlgoSpeciem>();
         ga.speciemFactory = () -> new AlgoSpeciem();
         OptimizationResult<AlgoSpeciem> result = ga.run();
-
-        // write data
-        // File dataFile = File.createTempFile("plot", "data");
-        // dataFile.deleteOnExit();
-        File dataFile = new File("data.dat");
-        try (PrintStream out = new PrintStream(dataFile)) {
-            for (int i = 0; i < result.fitnesses.size(); i++) {
-                double[] gen = result.fitnesses.get(i);
-                for (double f : gen) {
-                    out.println(i + " " + f);
-                }
-            }
-        }
-
-        // invoke gnuplot
-        new ProcessExecutor("gnuplot", "-e", "plot \"" + dataFile.getAbsolutePath() + "\"; pause -1")
-                .redirectOutput(System.out).redirectInput(System.in).execute();
+        return result;
     }
 
-    private class AlgoSpeciem extends Speciem<AlgoSpeciem> {
+    public class AlgoSpeciem extends Speciem<AlgoSpeciem> {
 
+        private static final long serialVersionUID = 1L;
         MeanReversionAlgorithm algo = algoProvider.get();
         int maxLong = 200;
         int maxShort = 200;
@@ -160,17 +156,31 @@ public class Trader {
             SummaryStatistics fitnessStats = new SummaryStatistics();
             gainStat = new SummaryStatistics();
             countStat = new SummaryStatistics();
+            List<Runnable> tasks = new ArrayList<>();
             while (time.isBefore(end)) {
                 Instant tmp = time.plus(Duration.ofDays(random.nextInt(step) + 1));
                 // Instant tmp = time;
-                AlgoData data = evaluateAlgo(algo, tmp, tmp.plus(Duration.ofDays(28)));
-                double countMean = data.countStat.getMean();
-                if (countMean == 0)
-                    countMean = 1;
-                fitnessStats
-                        .addValue(data.gainStat.getMean() / countMean - data.gainStat.getStandardDeviation() * 0.05);
-                gainStat.addValue(data.gainStat.getMean());
-                countStat.addValue(data.countStat.getMean());
+                MeanReversionAlgorithm algoTmp = algo;
+                Future<AlgoData> dataFuture = hz.getExecutorService("default").submit((Callable & Serializable) () -> {
+                    return evaluateAlgo(algoTmp, tmp, tmp.plus(Duration.ofDays(28)),
+                            InjectorHolder.injector.getInstance(TradeDataRepository.class));
+                });
+                tasks.add(() -> {
+                    try {
+                        AlgoData data = dataFuture.get();
+                        // AlgoData data = evaluateAlgo(algo, tmp,
+                        // tmp.plus(Duration.ofDays(28)));
+                        double countMean = data.countStat.getMean();
+                        if (countMean == 0)
+                            countMean = 1;
+                        fitnessStats.addValue(
+                                data.gainStat.getMean() / countMean - data.gainStat.getStandardDeviation() * 0.05);
+                        gainStat.addValue(data.gainStat.getMean());
+                        countStat.addValue(data.countStat.getMean());
+                    } catch (Exception e) {
+                        throw new RuntimeException(e);
+                    }
+                });
                 time = time.plus(Duration.ofDays(step));
             }
             fitness = fitnessStats.getMean();
@@ -178,27 +188,72 @@ public class Trader {
 
     }
 
-    private class AlgoData {
+    private static class AlgoData implements Serializable {
+        private static final long serialVersionUID = 1L;
         SummaryStatistics gainStat = new SummaryStatistics();
         SummaryStatistics countStat = new SummaryStatistics();
     }
 
-    private AlgoData evaluateAlgo(TradingAlgorithm algo, Instant start, Instant end) {
-        algo.train(start);
-        algo.prepare(start);
+    private static AlgoData evaluateAlgo(TradingAlgorithm algo, Instant start, Instant end, TradeDataRepository repo) {
+        algo.train(start, repo);
+        algo.prepare(start, repo);
         AlgoData data = new AlgoData();
+        List<Runnable> tasks = new ArrayList<>();
         while (!start.isAfter(end)) {
+            Instant startFinal = start;
             Instant next = start.plus(Duration.ofDays(1));
             TradeDataPoint nextPoint = repo.getDataMap().get(next);
             TradeDataPoint currentPoint = repo.getDataMap().get(start);
             if (currentPoint != null && nextPoint != null) {
-                double diff = nextPoint.settle - currentPoint.settle;
-                int count = algo.evaluate(start);
-                data.gainStat.addValue(diff * count);
-                data.countStat.addValue(Math.abs(count));
+                // Future<Integer> countFuture =
+                // hz.getExecutorService("default")
+                // .submit(RemoteHzCallable.create(new
+                // EvaluateAlgoCallable(startFinal, algo)));
+
+                tasks.add(() -> {
+                    double diff = nextPoint.settle - currentPoint.settle;
+                    int count = algo.evaluate(startFinal, repo);
+                    // int count;
+                    // try {
+                    // count = countFuture.get();
+                    // } catch (Exception e) {
+                    // throw new RuntimeException(e);
+                    // }
+                    data.gainStat.addValue(diff * count);
+                    data.countStat.addValue(Math.abs(count));
+                });
             }
             start = next;
         }
+        tasks.forEach(Runnable::run);
+
         return data;
+    }
+
+    private static class EvaluateAlgoCallable implements Callable<Integer>, Serializable {
+
+        private static final long serialVersionUID = 1L;
+        private TradingAlgorithm algo;
+        private Instant start;
+
+        public EvaluateAlgoCallable(Instant start, TradingAlgorithm algo) {
+            this.start = start;
+            this.algo = algo;
+        }
+
+        @Inject
+        TradeDataRepository repo;
+
+        @Override
+        public Integer call() throws Exception {
+            InjectorHolder.injector.injectMembers(this);
+            return algo.evaluate(start, repo);
+        }
+
+    }
+
+    @Override
+    public void setHazelcastInstance(HazelcastInstance hz) {
+        this.hz = hz;
     }
 }
