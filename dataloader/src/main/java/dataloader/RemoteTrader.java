@@ -2,16 +2,17 @@ package dataloader;
 
 import java.io.File;
 import java.io.PrintStream;
-import java.io.Serializable;
 
 import org.zeroturnaround.exec.ProcessExecutor;
 
+import com.ea.agentloader.AgentLoader;
 import com.hazelcast.client.HazelcastClient;
 import com.hazelcast.client.config.ClientConfig;
 import com.hazelcast.config.GlobalSerializerConfig;
 import com.hazelcast.core.HazelcastInstance;
 
 import ch.ruediste.remoteHz.common.HzHolder;
+import ch.ruediste.remoteHz.common.LambdaFactoryAgent;
 import ch.ruediste.remoteHz.common.RemoteCodeFactory;
 import ch.ruediste.remoteHz.common.RemoteCodeSerializer;
 import dataloader.Trader.AlgoSpeciem;
@@ -21,6 +22,7 @@ public class RemoteTrader {
     private static HazelcastInstance hz;
 
     public static void main(String... args) throws Exception {
+        AgentLoader.loadAgentClass(LambdaFactoryAgent.class.getName(), "");
         {
             ClientConfig clientConfig = new ClientConfig();
             GlobalSerializerConfig serConfig = new GlobalSerializerConfig();
@@ -34,9 +36,9 @@ public class RemoteTrader {
             RemoteCodeFactory.createRemoteCode(RemoteTrader.class, ser);
         }
         System.out.println("executing hello world");
-        hz.getExecutorService("default").submit((Runnable & Serializable) () -> {
+        hz.getExecutorService("default").submit(() -> {
             System.out.println("Hello from the trader");
-            HzHolder.hz.getExecutorService("default").execute((Runnable & Serializable) () -> {
+            HzHolder.hz.getExecutorService("default").execute(() -> {
                 System.out.println("Hello again from the trader");
             });
         }).get();

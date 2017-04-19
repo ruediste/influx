@@ -51,7 +51,7 @@ public class GeneticAlgorithm<T extends GeneticAlgorithm.Speciem<T>> {
 
         @Override
         public boolean getAsBoolean() {
-            return count++ > 25;
+            return count++ > 10;
         }
     };
 

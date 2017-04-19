@@ -51,6 +51,14 @@ public class Trader implements ICallable<OptimizationResult<Trader.AlgoSpeciem>>
 
             }
         });
+
+        public static <T> T getInstance(Class<T> cls) {
+            return injector.getInstance(cls);
+        }
+
+        public static void injectMembers(Object obj) {
+            injector.injectMembers(obj);
+        }
     }
 
     @Override
@@ -161,10 +169,11 @@ public class Trader implements ICallable<OptimizationResult<Trader.AlgoSpeciem>>
                 Instant tmp = time.plus(Duration.ofDays(random.nextInt(step) + 1));
                 // Instant tmp = time;
                 MeanReversionAlgorithm algoTmp = algo;
-                Future<AlgoData> dataFuture = hz.getExecutorService("default").submit((Callable & Serializable) () -> {
-                    return evaluateAlgo(algoTmp, tmp, tmp.plus(Duration.ofDays(28)),
-                            InjectorHolder.injector.getInstance(TradeDataRepository.class));
-                });
+                Future<AlgoData> dataFuture = hz.getExecutorService("default")
+                        .submit((Callable<AlgoData> & Serializable) () -> {
+                            return evaluateAlgo(algoTmp, tmp, tmp.plus(Duration.ofDays(28)),
+                                    InjectorHolder.getInstance(TradeDataRepository.class));
+                        });
                 tasks.add(() -> {
                     try {
                         AlgoData data = dataFuture.get();
@@ -183,6 +192,7 @@ public class Trader implements ICallable<OptimizationResult<Trader.AlgoSpeciem>>
                 });
                 time = time.plus(Duration.ofDays(step));
             }
+            tasks.forEach(x -> x.run());
             fitness = fitnessStats.getMean();
         }
 
